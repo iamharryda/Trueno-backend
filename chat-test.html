@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ride Sharing Chat & Real-Time Events Test</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; }
+    #log { border: 1px solid #ccc; padding: 1em; height: 400px; overflow-y: scroll; background: #f9f9f9; }
+    #msg { width: 80%; }
+    #room, #user, #token, #editMsgId, #editMsgText, #kickUserId, #updateRoomName, #updateRoomDesc, #rideId { width: 200px; }
+    .section { margin-bottom: 1em; border: 1px solid #ddd; padding: 1em; }
+    label { margin-right: 0.5em; display: inline-block; width: 120px; }
+    button { margin: 2px; padding: 5px 10px; }
+    .event-section { background: #e8f4f8; }
+    .chat-section { background: #f8f8e8; }
+    .ride-section { background: #f0f8f0; }
+  </style>
+</head>
+<body>
+  <h2>Ride Sharing Chat & Real-Time Events Test</h2>
+  
+  <div class="section">
+    <label>JWT Token: <input id="token" placeholder="JWT token (for REST)" /></label>
+  </div>
+
+  <div class="section event-section">
+    <h3>Socket Events</h3>
+    <label>User ID: <input id="user" placeholder="userId" /></label>
+    <button onclick="registerUser()">Register User (Socket)</button>
+    <button onclick="clearLog()">Clear Log</button>
+  </div>
+
+  <div class="section ride-section">
+    <h3>Ride Management</h3>
+    <label>Ride ID: <input id="rideId" placeholder="rideId" /></label>
+    <button onclick="joinRideChat()">Join Ride Chat (Socket)</button>
+    <button onclick="leaveRideChat()">Leave Ride Chat (Socket)</button>
+    <button onclick="getRideChat()">Get Ride Chat Room (REST)</button>
+  </div>
+
+  <div class="section chat-section">
+    <h3>Chat Room Management</h3>
+    <label>Room ID: <input id="room" placeholder="room-..." /></label>
+    <label>User ID: <input id="user" placeholder="userId" /></label>
+    <button onclick="joinRoom()">Join Room (Socket)</button>
+    <button onclick="leaveRoom()">Leave Room (Socket)</button>
+    <button onclick="getUserRooms()">Get My Chat Rooms</button>
+  </div>
+
+  <div class="section chat-section">
+    <h4>Create Chat Room (REST)</h4>
+    <label>Participant IDs (comma): <input id="createParticipants" placeholder="user1,user2" /></label>
+    <label>Name: <input id="createRoomName" placeholder="Room Name" /></label>
+    <label>Is Group: <input id="createIsGroup" type="checkbox" checked /></label>
+    <button onclick="createRoom()">Create Room</button>
+  </div>
+
+  <div class="section chat-section">
+    <h4>Update Chat Room (REST)</h4>
+    <label>Room Name: <input id="updateRoomName" placeholder="New Name" /></label>
+    <label>Description: <input id="updateRoomDesc" placeholder="Description" /></label>
+    <button onclick="updateRoom()">Update Room</button>
+  </div>
+
+  <div class="section chat-section">
+    <h4>Chat Actions</h4>
+    <label>Message: <input id="msg" placeholder="Type message..." /></label>
+    <button onclick="sendMessage()">Send Message (REST)</button>
+    <button onclick="getMessages()">Get Messages (REST)</button>
+    <button onclick="markAsRead()">Mark as Read (REST)</button>
+  </div>
+
+  <div class="section chat-section">
+    <h4>Message Management</h4>
+    <label>Message ID: <input id="editMsgId" placeholder="messageId" /></label>
+    <label>New Text: <input id="editMsgText" placeholder="New message text" /></label>
+    <button onclick="editMessage()">Edit Message (REST)</button>
+    <button onclick="deleteMessage()">Delete Message (REST)</button>
+  </div>
+
+  <div class="section chat-section">
+    <h4>Participant Management</h4>
+    <label>User IDs (comma): <input id="joinUserIds" placeholder="user1,user2" /></label>
+    <button onclick="joinParticipants()">Add Participants (REST)</button>
+    <label>Kick User ID: <input id="kickUserId" placeholder="userId" /></label>
+    <button onclick="kickParticipant()">Kick Participant (REST)</button>
+    <button onclick="leaveChatRoom()">Leave Chat Room (REST)</button>
+  </div>
+
+  <div class="section event-section">
+    <h3>Real-Time Events Log</h3>
+    <div id="log"></div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:5000/api/message';
+    const socket = io('http://localhost:5000');
+
+    // Socket event listeners
+    socket.on('connect', () => {
+      log('<b>Connected to server</b>');
+    });
+
+    socket.on('disconnect', () => {
+      log('<b>Disconnected from server</b>');
+    });
+
+    // Ride events
+    socket.on('ride_created', (data) => {
+      log(`<b style="color: green;">RIDE CREATED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('ride_joined', (data) => {
+      log(`<b style="color: blue;">RIDE JOINED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('user_kicked', (data) => {
+      log(`<b style="color: red;">USER KICKED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('kick_vote_started', (data) => {
+      log(`<b style="color: orange;">KICK VOTE STARTED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('ride_finished', (data) => {
+      log(`<b style="color: purple;">RIDE FINISHED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('got_rated', (data) => {
+      log(`<b style="color: brown;">GOT RATED</b>: ${JSON.stringify(data)}`);
+    });
+
+    // Chat room events
+    socket.on('roomCreated', (data) => {
+      log(`<b style="color: green;">ROOM CREATED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('roomUpdated', (data) => {
+      log(`<b style="color: blue;">ROOM UPDATED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('userJoined', (data) => {
+      log(`<b style="color: green;">USER JOINED ROOM</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('userLeft', (data) => {
+      log(`<b style="color: orange;">USER LEFT ROOM</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('userKicked', (data) => {
+      log(`<b style="color: red;">USER KICKED FROM ROOM</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('newMessage', (data) => {
+      log(`<b style="color: blue;">NEW MESSAGE</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('editMessage', (data) => {
+      log(`<b style="color: purple;">MESSAGE EDITED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('messageDeleted', (data) => {
+      log(`<b style="color: red;">MESSAGE DELETED</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('messagesRead', (data) => {
+      log(`<b style="color: gray;">MESSAGES READ</b>: ${JSON.stringify(data)}`);
+    });
+
+    socket.on('rideFinished', (data) => {
+      log(`<b style="color: purple;">RIDE FINISHED IN CHAT</b>: ${JSON.stringify(data)}`);
+    });
+
+    // Notification events
+    socket.on('notification', (data) => {
+      log(`<b style="color: brown;">NOTIFICATION</b>: ${JSON.stringify(data)}`);
+    });
+
+    function log(message) {
+      const logDiv = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `<div>[${time}] ${message}</div>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+    }
+
+    function getToken() {
+      return document.getElementById('token').value;
+    }
+
+    function getRoomId() {
+      return document.getElementById('room').value.replace('room-', '');
+    }
+
+    function getUserId() {
+      return document.getElementById('user').value;
+    }
+
+    function getRideId() {
+      return document.getElementById('rideId').value;
+    }
+
+    // Socket actions
+    function registerUser() {
+      const userId = getUserId();
+      socket.emit('registerUser', userId);
+      log(`Registering user: ${userId}`);
+    }
+
+    function joinRideChat() {
+      const rideId = getRideId();
+      socket.emit('joinRideChat', rideId);
+      log(`Joining ride chat: ${rideId}`);
+    }
+
+    function leaveRideChat() {
+      const rideId = getRideId();
+      socket.emit('leaveRideChat', rideId);
+      log(`Leaving ride chat: ${rideId}`);
+    }
+
+    function joinRoom() {
+      const room = document.getElementById('room').value;
+      socket.emit('joinRoom', room);
+      log(`Joining room: ${room}`);
+    }
+
+    function leaveRoom() {
+      const room = document.getElementById('room').value;
+      socket.emit('leaveRoom', room);
+      log(`Leaving room: ${room}`);
+    }
+
+    // REST actions
+    async function getRideChat() {
+      const token = getToken();
+      const rideId = getRideId();
+      const res = await fetch(`${API}/ride/${rideId}/chat`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      log(`<b>Get Ride Chat</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function createRoom() {
+      const token = getToken();
+      const participantIds = document.getElementById('createParticipants').value.split(',').map(s => s.trim());
+      const name = document.getElementById('createRoomName').value;
+      const isGroup = document.getElementById('createIsGroup').checked;
+      const res = await fetch(`${API}/room`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ participantIds, name, isGroup })
+      });
+      const data = await res.json();
+      log(`<b>Create Room</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function updateRoom() {
+      const token = getToken();
+      const roomId = getRoomId();
+      const name = document.getElementById('updateRoomName').value;
+      const description = document.getElementById('updateRoomDesc').value;
+      const res = await fetch(`${API}/room/${roomId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ name, description })
+      });
+      const data = await res.json();
+      log(`<b>Update Room</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function joinParticipants() {
+      const token = getToken();
+      const roomId = getRoomId();
+      const userIds = document.getElementById('joinUserIds').value.split(',').map(s => s.trim());
+      const res = await fetch(`${API}/room/${roomId}/join`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userIds })
+      });
+      const data = await res.json();
+      log(`<b>Join Participants</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function kickParticipant() {
+      const token = getToken();
+      const roomId = getRoomId();
+      const userId = document.getElementById('kickUserId').value;
+      const res = await fetch(`${API}/room/${roomId}/kick`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userId })
+      });
+      const data = await res.json();
+      log(`<b>Kick Participant</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function leaveChatRoom() {
+      const token = getToken();
+      const roomId = getRoomId();
+      const res = await fetch(`${API}/room/leave/${roomId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      log(`<b>Leave Chat Room</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function sendMessage() {
+      const token = getToken();
+      const roomId = getRoomId();
+      const message = document.getElementById('msg').value;
+      const res = await fetch(`${API}/${roomId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ message })
+      });
+      const data = await res.json();
+      log(`<b>Send Message</b>: ${JSON.stringify(data)}`);
+      document.getElementById('msg').value = '';
+    }
+
+    async function getMessages() {
+      const token = getToken();
+      const roomId = getRoomId();
+      const res = await fetch(`${API}/${roomId}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      log(`<b>Get Messages</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function markAsRead() {
+      const token = getToken();
+      const roomId = getRoomId();
+      const res = await fetch(`${API}/read/${roomId}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      log(`<b>Mark as Read</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function editMessage() {
+      const token = getToken();
+      const messageId = document.getElementById('editMsgId').value;
+      const message = document.getElementById('editMsgText').value;
+      const res = await fetch(`${API}/${messageId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ message })
+      });
+      const data = await res.json();
+      log(`<b>Edit Message</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function deleteMessage() {
+      const token = getToken();
+      const messageId = document.getElementById('editMsgId').value;
+      const res = await fetch(`${API}/${messageId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      log(`<b>Delete Message</b>: ${JSON.stringify(data)}`);
+    }
+
+    async function getUserRooms() {
+      const token = getToken();
+      const res = await fetch(`${API}/rooms`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      log(`<b>Get My Chat Rooms</b>: ${JSON.stringify(data)}`);
+    }
+  </script>
+</body>
+</html>
